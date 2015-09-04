@@ -18,6 +18,7 @@ import (
 var zpool string
 var listen string
 var piddir string
+var conlogdir string
 var quit chan string
 
 func init() {
@@ -26,16 +27,19 @@ func init() {
 	// defaults
 	listen = ":8080"
 	piddir = "/var/run"
+	conlogdir = "/tmp"
 	quit = make(chan string)
 
 	OptErr = 0
 	for {
-		if c = Getopt("z:l:p:i:h"); c == EOF {
+		if c = Getopt("z:l:p:i:c:h"); c == EOF {
 			break
 		}
 		switch c {
 		case 'z':
 			zpool = OptArg
+		case 'c':
+			conlogdir = OptArg
 		case 'l':
 			listen = OptArg
 		case 'p':
@@ -71,7 +75,7 @@ func init() {
 }
 
 func usage() {
-	println("usage: pangolin [-z zpool|-l listenaddress|-p piddir|-i publicinterface|-h]")
+	println("usage: pangolin [-z zpool|-l listenaddress|-p piddir|-i publicinterface|-c consolelogdir|-h]")
 }
 
 func bridgeCreate() {
@@ -584,8 +588,7 @@ func killGotty(instanceid string) {
 }
 
 func startGotty(instanceid string, port int) {
-	// TODO remove hard coded paths
-	cmd := exec.Command("gotty", "--once", "-w", "-p", strconv.Itoa(port), "ttyrec", "-a", "-e", "sudo cu -l /dev/nmdm-" + instanceid + "-B", "/tmp/"+instanceid+".rec")
+	cmd := exec.Command("gotty", "--once", "-w", "-p", strconv.Itoa(port), "ttyrec", "-a", "-e", "sudo cu -l /dev/nmdm-" + instanceid + "-B", conlogdir + "/" +instanceid+".rec")
 	cmd.Start()
 	cmd.Wait()
 }
