@@ -15,11 +15,31 @@ import (
 	"time"
 )
 
+var lock = sync.RWMutex{}
 var zpool string
 var listen string
 var piddir string
 var conlogdir string
 var quit chan string
+var conportbase int
+
+type Instances struct {
+	Instance string
+	Running  bool
+	Image    string
+	ConPort  int
+}
+
+type Images struct {
+	Imageid string
+	Os      string
+}
+
+type Ima struct {
+	Ima string
+	Mem int
+	Cpu int
+}
 
 func init() {
 	var c int
@@ -28,11 +48,12 @@ func init() {
 	listen = ":8080"
 	piddir = "/var/run"
 	conlogdir = "/tmp"
+	conportbase = 10000
 	quit = make(chan string)
 
 	OptErr = 0
 	for {
-		if c = Getopt("z:l:p:i:c:h"); c == EOF {
+		if c = Getopt("z:l:p:i:c:b:h"); c == EOF {
 			break
 		}
 		switch c {
@@ -46,6 +67,9 @@ func init() {
 			piddir = OptArg
 		case 'i':
 			pubinterface = OptArg
+		case 'b':
+			cpb, _ := strconv.Atoi(OptArg)
+			conportbase = cpb
 		case 'h':
 			usage()
 			os.Exit(1)
@@ -140,26 +164,6 @@ func main() {
 	log.Fatal(http.ListenAndServe(listen, api.MakeHandler()))
 }
 
-type Instances struct {
-	Instance string
-	Running  bool
-	Image    string
-	ConPort  string
-}
-
-type Images struct {
-	Imageid string
-	Os      string
-}
-
-type Ima struct {
-	Ima string
-	Mem int
-	Cpu int
-}
-
-var lock = sync.RWMutex{}
-
 func ImageList(w rest.ResponseWriter, r *rest.Request) {
 	lock.Lock()
 	cmd := exec.Command("zfs", "list", "-H", "-t", "volume")
@@ -250,9 +254,7 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 					inst.Running = true
 				}
 				inst.Image = getInstanceIma(i)
-				tap := getTap(i)
-				tapi, _ := strconv.Atoi(tap[3:])
-				inst.ConPort = strconv.Itoa(tapi + 10000)
+				inst.ConPort = getConPort(i)
 				instance_list = append(instance_list, inst)
 			}
 		}
@@ -471,6 +473,12 @@ func getPid(instanceid string) (string, error) {
 	return string(stdout), nil
 }
 
+func getConPort(instanceid string) int {
+	tap := getTap(instanceid)
+	tapi, _ := strconv.Atoi(tap[3:])
+	return tapi + conportbase
+}
+
 // takes an image id and creates a running instance from it
 func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 	// get ima
@@ -551,9 +559,7 @@ func startFreeBSDVM(console string, cpus int, memory int, tap string, instanceid
 	bhyveDestroy(instanceid)
 	bhyveLoad(console, memory, instanceid)
 	execBhyve(console, cpus, memory, tap, instanceid)
-	port, _ := strconv.Atoi(tap[3:])
-	port = port + 10000
-	go startRecordedWebConsole(instanceid, port)
+	go startRecordedWebConsole(instanceid)
 }
 
 func killGotty(instanceid string) {
@@ -597,7 +603,7 @@ func startGotty(instanceid string, port int) {
 	cmd.Wait()
 }
 
-func startRecordedWebConsole(instanceid string, port int) {
+func startRecordedWebConsole(instanceid string) {
 	for {
 		select {
 		case msg := <-quit:
@@ -608,6 +614,7 @@ func startRecordedWebConsole(instanceid string, port int) {
 			}
 		default:
 			killGotty(instanceid)
+			port := getConPort(instanceid)
 			startGotty(instanceid, port)
 		}
 	}
