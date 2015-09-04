@@ -614,7 +614,7 @@ func killGotty(instanceid string) {
 }
 
 func startGotty(instanceid string, port int) {
-	cmd := exec.Command("gotty", "--once", "-w", "-p", strconv.Itoa(port), "ttyrec", "-a", "-e", "sudo cu -l /dev/nmdm-"+instanceid+"-B", conlogdir+"/"+instanceid+".rec")
+	cmd := exec.Command("gotty", "--title-format", instanceid, "--once", "-w", "-p", strconv.Itoa(port), "ttyrec", "-a", "-e", "sudo cu -l /dev/nmdm-"+instanceid+"-B", conlogdir+"/"+instanceid+".rec")
 	cmd.Start()
 	cmd.Wait()
 }
