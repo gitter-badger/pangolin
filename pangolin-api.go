@@ -156,12 +156,8 @@ func main() {
 	api := rest.NewApi()
 	api.Use(rest.DefaultDevStack...)
 	router, err := rest.MakeRouter(
-
-		// TODO http://docs.aws.amazon.com/AWSEC2/latest/APIReference/OperationList-query.html
-
 		rest.Post("/api/v1/images", HandleImageCreate),
 		rest.Get("/api/v1/images", HandleImageList),
-
 		rest.Post("/api/v1/instances", HandleInstanceCreate),
 		rest.Post("/api/v1/instances/:instanceid", HandleInstanceStart),
 		rest.Put("/api/v1/instances/:instanceid", HandleInstanceStop),
