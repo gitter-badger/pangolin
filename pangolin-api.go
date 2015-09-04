@@ -28,6 +28,8 @@ type Instances struct {
 	Running  bool
 	Image    string
 	ConPort  int
+	Cpu      int
+	Mem      int
 }
 
 type Images struct {
@@ -251,17 +253,19 @@ func getInstances() []Instances {
 
 	for _, line := range lines {
 		if len(line) > 0 {
-			i := strings.Split(line, "\t")[0]
-			i = strings.Split(i, "/")[1]
-			if re.MatchString(i) == true {
+			instanceid := strings.Split(line, "\t")[0]
+			instanceid = strings.Split(instanceid, "/")[1]
+			if re.MatchString(instanceid) == true {
 				inst := Instances{}
-				inst.Instance = i
+				inst.Instance = instanceid
 				_, err := getPid(inst.Instance)
 				if err == nil {
 					inst.Running = true
 				}
-				inst.Image = getInstanceIma(i)
-				inst.ConPort = getConPort(i)
+				inst.Image = getInstanceIma(instanceid)
+				inst.ConPort = getConPort(instanceid)
+				inst.Cpu = getCpu(instanceid)
+				inst.Mem = getMem(instanceid)
 				instance_list = append(instance_list, inst)
 			}
 		}
