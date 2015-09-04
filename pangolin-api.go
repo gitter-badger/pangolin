@@ -96,6 +96,17 @@ func init() {
 	sysctlSet("net.link.tap.up_on_open", "1")
 	bridgeCreate()
 	bridgeAddPub(pubinterface)
+	restartCons()
+
+}
+
+// restart consoles on running instances
+func restartCons() {
+	for _, inst := range getInstances() {
+		if inst.Running {
+			go startRecordedWebConsole(inst.Instance)
+		}
+	}
 }
 
 func usage() {
@@ -148,14 +159,14 @@ func main() {
 
 		// TODO http://docs.aws.amazon.com/AWSEC2/latest/APIReference/OperationList-query.html
 
-		rest.Post("/api/v1/images", ImageCreate),
-		rest.Get("/api/v1/images", ImageList),
+		rest.Post("/api/v1/images", HandleImageCreate),
+		rest.Get("/api/v1/images", HandleImageList),
 
-		rest.Post("/api/v1/instances", InstanceCreate),
-		rest.Post("/api/v1/instances/:instanceid", InstanceStart),
-		rest.Put("/api/v1/instances/:instanceid", InstanceStop),
-		rest.Get("/api/v1/instances", InstanceList),
-		rest.Delete("/api/v1/instances/:instanceid", InstanceDestroy),
+		rest.Post("/api/v1/instances", HandleInstanceCreate),
+		rest.Post("/api/v1/instances/:instanceid", HandleInstanceStart),
+		rest.Put("/api/v1/instances/:instanceid", HandleInstanceStop),
+		rest.Get("/api/v1/instances", HandleInstanceList),
+		rest.Delete("/api/v1/instances/:instanceid", HandleInstanceDestroy),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -164,7 +175,7 @@ func main() {
 	log.Fatal(http.ListenAndServe(listen, api.MakeHandler()))
 }
 
-func ImageList(w rest.ResponseWriter, r *rest.Request) {
+func HandleImageList(w rest.ResponseWriter, r *rest.Request) {
 	lock.Lock()
 	cmd := exec.Command("zfs", "list", "-H", "-t", "volume")
 	stdout, err := cmd.Output()
@@ -226,7 +237,7 @@ func getImaOs(imageid string) string {
 
 }
 
-func InstanceList(w rest.ResponseWriter, r *rest.Request) {
+func getInstances() []Instances {
 	lock.Lock()
 	cmd := exec.Command("zfs", "list", "-H", "-t", "volume")
 	stdout, err := cmd.Output()
@@ -234,7 +245,7 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 
 	if err != nil {
 		println(stdout)
-		return
+		return nil
 	}
 
 	lines := strings.Split(string(stdout), "\n")
@@ -259,7 +270,12 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 			}
 		}
 	}
-	w.WriteJson(&instance_list)
+
+	return instance_list
+}
+
+func HandleInstanceList(w rest.ResponseWriter, r *rest.Request) {
+	w.WriteJson(getInstances())
 }
 
 func cloneIma(ima string, instanceid string) {
@@ -480,7 +496,7 @@ func getConPort(instanceid string) int {
 }
 
 // takes an image id and creates a running instance from it
-func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
+func HandleInstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 	// get ima
 	ima := Ima{}
 	err := r.DecodeJsonPayload(&ima)
@@ -657,7 +673,7 @@ func killInstance(instanceid string) {
 	bhyveDestroy(instanceid)
 }
 
-func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
+func HandleInstanceStart(w rest.ResponseWriter, r *rest.Request) {
 	instanceid := r.PathParam("instanceid")
 
 	re, _ := regexp.Compile(`^i-.*`)
@@ -698,7 +714,7 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 
 }
 
-func InstanceStop(w rest.ResponseWriter, r *rest.Request) {
+func HandleInstanceStop(w rest.ResponseWriter, r *rest.Request) {
 	instance := r.PathParam("instanceid")
 
 	re, _ := regexp.Compile(`^i-.*`)
@@ -724,7 +740,7 @@ func realInstanceDestroy(instance string) {
 	destroyClone(instance)
 }
 
-func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
+func HandleInstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
 	instance := r.PathParam("instanceid")
 
 	re, _ := regexp.Compile(`^i-.*`)
@@ -737,7 +753,7 @@ func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
 	w.WriteJson(&instance)
 }
 
-func ImageCreate(w rest.ResponseWriter, r *rest.Request) {
+func HandleImageCreate(w rest.ResponseWriter, r *rest.Request) {
 	u1 := uuid.NewV4()
 	u2 := u1.String()
 	u2 = "ima-" + u2[0:8]
