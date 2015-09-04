@@ -18,6 +18,7 @@ import (
 var zpool string
 var listen string
 var piddir string
+var quit chan string
 
 func init() {
 	var c int
@@ -25,6 +26,7 @@ func init() {
 	// defaults
 	listen = ":8080"
 	piddir = "/var/run"
+	quit = make(chan string)
 
 	OptErr = 0
 	for {
@@ -181,10 +183,8 @@ func ImageList(w rest.ResponseWriter, r *rest.Request) {
 }
 
 func getInstanceIma(instanceid string) string {
-	lock.Lock()
 	cmd := exec.Command("zfs", "get", "-H", "origin", zpool+"/"+instanceid)
 	stdout, err := cmd.Output()
-	lock.Unlock()
 
 	if err != nil {
 		return ""
@@ -543,6 +543,76 @@ func startFreeBSDVM(console string, cpus int, memory int, tap string, instanceid
 	bhyveDestroy(instanceid)
 	bhyveLoad(console, memory, instanceid)
 	execBhyve(console, cpus, memory, tap, instanceid)
+	port, _ := strconv.Atoi(tap[3:])
+	port = port + 10000
+	go startRecordedWebConsole(instanceid, port)
+}
+
+func killGotty(instanceid string) {
+	cmd := exec.Command("sudo", "ps", "auxww")
+	stdout, err := cmd.Output()
+	if err != nil {
+		return
+	}
+
+	lines := strings.Split(string(stdout), "\n")
+	var recpid string
+
+	for _, line := range lines {
+		if strings.Contains(line, instanceid) {
+			sudo := strings.Contains(line, "sudo")
+			if !sudo {
+				bhyve := strings.Contains(line, "bhyve")
+				if !bhyve {
+					recpid = strings.Fields(line)[1]
+					cmd = exec.Command("sudo", "kill", recpid)
+					cmd.Output()
+				}
+			}
+		}
+	}
+	for _, line := range lines {
+		if strings.Contains(line, instanceid) {
+			gotty := strings.Contains(line, "gotty")
+			if gotty {
+				recpid = strings.Fields(line)[1]
+				cmd = exec.Command("sudo", "kill", recpid)
+				cmd.Output()
+			}
+		}
+	}
+}
+
+func startGotty(instanceid string, port int) {
+	t := time.Now()
+	timestamp := t.Format("20060102150405")
+	// TODO remove hard coded paths
+	cmd := exec.Command("gotty", "--once", "-w", "-p", strconv.Itoa(port), "ttyrec", "-a", "-e", "sudo cu -l /dev/nmdm-" + instanceid + "-B", "/tmp/"+instanceid+"-"+timestamp+".rec")
+	cmd.Start()
+	cmd.Wait()
+}
+
+func startRecordedWebConsole(instanceid string, port int) {
+	for {
+		select {
+		case msg := <-quit:
+			if msg == instanceid {
+				return
+			} else {
+				quit <- msg
+			}
+		default:
+			killGotty(instanceid)
+			startGotty(instanceid, port)
+		}
+	}
+}
+
+func killRecordedWebConsole(instanceid string) {
+	go func() {
+		quit <- instanceid
+	}()
+	killGotty(instanceid)
 }
 
 func allocateInstanceId() string {
@@ -552,8 +622,9 @@ func allocateInstanceId() string {
 	return u2
 }
 
-func killInstance(instance string) {
-	pid, _ := getPid(instance)
+func killInstance(instanceid string) {
+	killRecordedWebConsole(instanceid)
+	pid, _ := getPid(instanceid)
 	if len(pid) > 0 {
 		cmd := exec.Command("sudo", "kill", pid)
 		cmd.Output()
@@ -571,7 +642,7 @@ func killInstance(instance string) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	bhyveDestroy(instance)
+	bhyveDestroy(instanceid)
 }
 
 func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
