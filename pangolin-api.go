@@ -296,23 +296,6 @@ func destroyClone(instanceid string) {
 	}
 }
 
-func setupTap(tap string) {
-	lock.Lock()
-	cmd := exec.Command("sudo", "ifconfig", tap, "destroy")
-	stdout, err := cmd.Output()
-	cmd = exec.Command("sudo", "ifconfig", tap, "create")
-	stdout, err = cmd.Output()
-	lock.Unlock()
-
-	if err != nil {
-		println("setupTap error: ")
-		println(err.Error())
-		return
-	}
-
-	print(string(stdout))
-}
-
 func addTapToBridge(tap string, bridge string) {
 	lock.Lock()
 	cmd := exec.Command("sudo", "ifconfig", bridge, "addm", tap)
@@ -377,7 +360,7 @@ func execBhyve(console string, cpus int, memory int, tap string, instanceid stri
 
 func allocateTap() string {
 	lock.Lock()
-	cmd := exec.Command("ifconfig")
+	cmd := exec.Command("sudo", "ifconfig", "tap", "create")
 	stdout, err := cmd.Output()
 	lock.Unlock()
 	if err != nil {
@@ -385,19 +368,11 @@ func allocateTap() string {
 		return ""
 	}
 
-	lines := strings.Split(string(stdout), "\n")
-
-	t := 0
-	r, err := regexp.Compile("^tap" + strconv.Itoa(t) + ": .*")
-
-	for _, line := range lines {
-		if r.MatchString(line) == true {
-			t = t + 1
-			r, err = regexp.Compile("^tap" + strconv.Itoa(t) + ": .*")
-		}
+	tap := string(stdout)
+	if tap[len(tap)-1:] == "\n" {
+		tap = tap[:len(tap)-1]
 	}
-
-	return "tap" + strconv.Itoa(t)
+	return tap
 }
 
 func freeTap(tap string) {
@@ -491,6 +466,12 @@ func getPid(instanceid string) (string, error) {
 
 func getConPort(instanceid string) int {
 	tap := getTap(instanceid)
+	if tap == "" {
+		return -1
+	}
+	if tap == "-1" {
+		return -1
+	}
 	tapi, _ := strconv.Atoi(tap[3:])
 	return tapi + conportbase
 }
@@ -530,15 +511,14 @@ func HandleInstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		if tap == "" {
 			return
 		}
+		saveTap(tap, instanceid)
 		bridge := findBridge()
-		setupTap(tap)
 		addTapToBridge(tap, bridge)
 		bridgeUp(bridge)
 
 		// cleanup leftover instance if needed
 		bhyveDestroy(instanceid)
 		nmdm := "/dev/nmdm-" + instanceid + "-A"
-		saveTap(tap, instanceid)
 		saveCpu(ima.Cpu, instanceid)
 		saveMem(ima.Mem, instanceid)
 		go startFreeBSDVM(nmdm, ima.Cpu, ima.Mem, tap, instanceid)
@@ -553,13 +533,12 @@ func HandleInstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		if tap == "" {
 			return
 		}
+		saveTap(tap, instanceid)
 		bridge := findBridge()
-		setupTap(tap)
 		addTapToBridge(tap, bridge)
 		bridgeUp(bridge)
 
 		//nmdm := "/dev/nmdm-" + instanceid + "-A"
-		saveTap(tap, instanceid)
 		saveCpu(ima.Cpu, instanceid)
 		saveMem(ima.Mem, instanceid)
 		// bhyveLoad(nmdm, ima.Mem, instanceid)
@@ -631,7 +610,9 @@ func startRecordedWebConsole(instanceid string) {
 		default:
 			killGotty(instanceid)
 			port := getConPort(instanceid)
-			startGotty(instanceid, port)
+			if port != -1 {
+				startGotty(instanceid, port)
+			}
 		}
 	}
 }
@@ -693,12 +674,12 @@ func HandleInstanceStart(w rest.ResponseWriter, r *rest.Request) {
 	switch os {
 	case "freebsd":
 		// create network interface and bring up
-		tap := getTap(instanceid)
+		tap := allocateTap()
 		if tap == "" {
 			return
 		}
+		saveTap(tap, instanceid)
 		bridge := findBridge()
-		setupTap(tap)
 		addTapToBridge(tap, bridge)
 		bridgeUp(bridge)
 
@@ -715,27 +696,32 @@ func HandleInstanceStart(w rest.ResponseWriter, r *rest.Request) {
 }
 
 func HandleInstanceStop(w rest.ResponseWriter, r *rest.Request) {
-	instance := r.PathParam("instanceid")
+	instanceid := r.PathParam("instanceid")
 
 	re, _ := regexp.Compile(`^i-.*`)
-	if re.MatchString(instance) == false {
+	if re.MatchString(instanceid) == false {
 		return
 	}
 
-	go killInstance(instance)
+	go realInstanceStop(instanceid)
+
 	return
 }
 
-func realInstanceDestroy(instance string) {
-	killInstance(instance)
-
-	tap := getTap(instance)
+func realInstanceStop(instanceid string) {
+	killInstance(instanceid)
+	tap := getTap(instanceid)
 	if len(tap) > 0 {
 		freeTap(tap)
 	}
+	saveTap("-1", instanceid)
+}
+
+func realInstanceDestroy(instance string) {
+	realInstanceStop(instance)
 
 	// wait for VM to stop
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	destroyClone(instance)
 }
