@@ -144,6 +144,7 @@ type Instances struct {
 	Instance string
 	Running  bool
 	Image    string
+	ConPort  string
 }
 
 type Images struct {
@@ -249,6 +250,9 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 					inst.Running = true
 				}
 				inst.Image = getInstanceIma(i)
+				tap := getTap(i)
+				tapi, _ := strconv.Atoi(tap[3:])
+				inst.ConPort = strconv.Itoa(tapi + 10000)
 				instance_list = append(instance_list, inst)
 			}
 		}
