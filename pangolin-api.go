@@ -584,10 +584,8 @@ func killGotty(instanceid string) {
 }
 
 func startGotty(instanceid string, port int) {
-	t := time.Now()
-	timestamp := t.Format("20060102150405")
 	// TODO remove hard coded paths
-	cmd := exec.Command("gotty", "--once", "-w", "-p", strconv.Itoa(port), "ttyrec", "-a", "-e", "sudo cu -l /dev/nmdm-" + instanceid + "-B", "/tmp/"+instanceid+"-"+timestamp+".rec")
+	cmd := exec.Command("gotty", "--once", "-w", "-p", strconv.Itoa(port), "ttyrec", "-a", "-e", "sudo cu -l /dev/nmdm-" + instanceid + "-B", "/tmp/"+instanceid+".rec")
 	cmd.Start()
 	cmd.Wait()
 }
