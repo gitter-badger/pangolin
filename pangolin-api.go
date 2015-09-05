@@ -164,6 +164,7 @@ func main() {
 		rest.Post("/api/v1/instances/:instanceid", HandleInstanceStart),
 		rest.Put("/api/v1/instances/:instanceid", HandleInstanceStop),
 		rest.Get("/api/v1/instances", HandleInstanceList),
+		rest.Get("/api/v1/instances/:instanceid", HandleInstanceInfo),
 		rest.Delete("/api/v1/instances/:instanceid", HandleInstanceDestroy),
 	)
 	if err != nil {
@@ -256,16 +257,7 @@ func getInstances() []Instances {
 			instanceid := strings.Split(line, "\t")[0]
 			instanceid = strings.Split(instanceid, "/")[1]
 			if re.MatchString(instanceid) == true {
-				inst := Instances{}
-				inst.Instance = instanceid
-				_, err := getPid(inst.Instance)
-				if err == nil {
-					inst.Running = true
-				}
-				inst.Image = getInstanceIma(instanceid)
-				inst.ConPort = getConPort(instanceid)
-				inst.Cpu = getCpu(instanceid)
-				inst.Mem = getMem(instanceid)
+				inst := getInstance(instanceid)
 				instance_list = append(instance_list, inst)
 			}
 		}
@@ -274,8 +266,28 @@ func getInstances() []Instances {
 	return instance_list
 }
 
+func getInstance(instanceid string) Instances {
+	inst := Instances{}
+	inst.Instance = instanceid
+	_, err := getPid(inst.Instance)
+	if err == nil {
+		inst.Running = true
+	}
+	inst.Image = getInstanceIma(instanceid)
+	inst.ConPort = getConPort(instanceid)
+	inst.Cpu = getCpu(instanceid)
+	inst.Mem = getMem(instanceid)
+
+	return inst
+}
+
 func HandleInstanceList(w rest.ResponseWriter, r *rest.Request) {
 	w.WriteJson(getInstances())
+}
+
+func HandleInstanceInfo(w rest.ResponseWriter, r *rest.Request) {
+	instanceid := r.PathParam("instanceid")
+	w.WriteJson(getInstance(instanceid))
 }
 
 func cloneIma(ima string, instanceid string) {
