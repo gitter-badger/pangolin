@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"io/ioutil"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -511,8 +513,6 @@ func HandleInstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		addTapToBridge(tap, bridge)
 		bridgeUp(bridge)
 
-		// cleanup leftover instance if needed
-		bhyveDestroy(instanceid)
 		nmdm := "/dev/nmdm-" + instanceid + "-A"
 		saveCpu(ima.Cpu, instanceid)
 		saveMem(ima.Mem, instanceid)
@@ -536,12 +536,43 @@ func HandleInstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		//nmdm := "/dev/nmdm-" + instanceid + "-A"
 		saveCpu(ima.Cpu, instanceid)
 		saveMem(ima.Mem, instanceid)
-		// bhyveLoad(nmdm, ima.Mem, instanceid)
-		// execBhyve(nmdm, ima.Cpu, ima.Mem, tap, instanceid)
+		bhyveDestroy(instanceid)
+		nmdm := "/dev/nmdm-" + instanceid + "-A"
+		go startLinuxVM(nmdm, ima.Cpu, ima.Mem, tap, instanceid)
 		w.WriteJson(&instanceid)
 	default:
 		rest.Error(w, "unknown OS", 400)
 	}
+}
+
+func grubBhyve(instanceid string, memory int) {
+	dmfile := "/tmp/devicemap-"+instanceid
+	dmtxt := []byte("(hd0) /dev/zvol/"+zpool+"/"+instanceid)
+	err := ioutil.WriteFile(dmfile, dmtxt, 0644)
+	if err != nil {
+		panic(err)
+	}
+	cmd := exec.Command("sudo", "grub-bhyve", "-m", dmfile, "-r", "hd0,msdos1", "-M", strconv.Itoa(memory) + "M", instanceid)
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		panic(err)
+	}
+
+	if err = cmd.Start(); err != nil {
+		panic(err)
+	}
+
+	io.WriteString(stdin, "linux (hd0,msdos1)/vmlinuz-3.19.0-25-generic root=/dev/ubuntu-vg/root\ninitrd (hd0,msdos1)/initrd.img-3.19.0-25-generic\nboot\n")
+	cmd.Wait()
+	os.Remove(dmfile)
+}
+
+func startLinuxVM(console string, cpus int, memory int, tap string, instanceid string) {
+	bhyveDestroy(instanceid)
+	grubBhyve(instanceid, memory)
+	execBhyve(console, cpus, memory, tap, instanceid)
+	go startRecordedWebConsole(instanceid)
 }
 
 func startFreeBSDVM(console string, cpus int, memory int, tap string, instanceid string) {
@@ -683,6 +714,22 @@ func HandleInstanceStart(w rest.ResponseWriter, r *rest.Request) {
 		cpu := getCpu(instanceid)
 		mem := getMem(instanceid)
 		go startFreeBSDVM(nmdm, cpu, mem, tap, instanceid)
+		w.WriteJson(&instanceid)
+	case "linux":
+		// create network interface and bring up
+		tap := allocateTap()
+		if tap == "" {
+			return
+		}
+		saveTap(tap, instanceid)
+		bridge := findBridge()
+		addTapToBridge(tap, bridge)
+		bridgeUp(bridge)
+
+		nmdm := "/dev/nmdm-" + instanceid + "-A"
+		cpu := getCpu(instanceid)
+		mem := getMem(instanceid)
+		go startLinuxVM(nmdm, cpu, mem, tap, instanceid)
 		w.WriteJson(&instanceid)
 	default:
 		rest.Error(w, "unknown OS", 400)
