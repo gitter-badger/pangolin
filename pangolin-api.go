@@ -398,69 +398,52 @@ func findBridge() string {
 	return "bridge0"
 }
 
-func saveTap(tap string, instanceid string) {
-	cmd := exec.Command("sudo", "zfs", "set", "pangolin:tap="+tap, zpool+"/"+instanceid)
+func saveInstanceProperty(instanceid string, property string, value string) {
+	cmd := exec.Command("sudo", "zfs", "set", "pangolin:"+property+"="+value, zpool+"/"+instanceid)
 	stdout, err := cmd.Output()
 	if err != nil {
 		panic(err)
 	}
 	print(string(stdout))
+
+}
+
+func getInstanceProperty(instanceid string, property string) string {
+	cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:"+property, zpool+"/"+instanceid)
+	stdout, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	if len(strings.Fields(string(stdout))) < 2 {
+		return ""
+	}
+	value := strings.Fields(string(stdout))[2]
+	return value
+}
+
+func saveTap(tap string, instanceid string) {
+	saveInstanceProperty(instanceid, "tap", tap)
 }
 
 func saveCpu(cpu int, instanceid string) {
-	cmd := exec.Command("sudo", "zfs", "set", "pangolin:cpu="+strconv.Itoa(cpu), zpool+"/"+instanceid)
-	stdout, err := cmd.Output()
-	if err != nil {
-		panic(err)
-	}
-	print(string(stdout))
+	saveInstanceProperty(instanceid, "cpu", strconv.Itoa(cpu))
 }
 
 func saveMem(mem int, instanceid string) {
-	cmd := exec.Command("sudo", "zfs", "set", "pangolin:mem="+strconv.Itoa(mem), zpool+"/"+instanceid)
-	stdout, err := cmd.Output()
-	if err != nil {
-		panic(err)
-	}
-	print(string(stdout))
+	saveInstanceProperty(instanceid, "mem", strconv.Itoa(mem))
 }
 
 func getTap(instanceid string) string {
-	cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:tap", zpool+"/"+instanceid)
-	stdout, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	if len(strings.Fields(string(stdout))) < 2 {
-		return ""
-	}
-	tap := strings.Fields(string(stdout))[2]
-	return tap
+	return getInstanceProperty(instanceid, "tap")
 }
 
 func getCpu(instanceid string) int {
-	cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:cpu", zpool+"/"+instanceid)
-	stdout, err := cmd.Output()
-	if err != nil {
-		return -1
-	}
-	if len(strings.Fields(string(stdout))) < 2 {
-		return -1
-	}
-	cpu, _ := strconv.Atoi(strings.Fields(string(stdout))[2])
+	cpu, _ := strconv.Atoi(getInstanceProperty(instanceid, "cpu"))
 	return cpu
 }
 
 func getMem(instanceid string) int {
-	cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:mem", zpool+"/"+instanceid)
-	stdout, err := cmd.Output()
-	if err != nil {
-		return -1
-	}
-	if len(strings.Fields(string(stdout))) < 2 {
-		return -1
-	}
-	mem, _ := strconv.Atoi(strings.Fields(string(stdout))[2])
+	mem, _ := strconv.Atoi(getInstanceProperty(instanceid, "mem"))
 	return mem
 }
 
