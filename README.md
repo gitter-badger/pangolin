@@ -1,5 +1,7 @@
 What is it
 =============
+
+[![Join the chat at https://gitter.im/swills/pangolin](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/swills/pangolin?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 A simple API for managing Bhyve instances, useful for building a FreeBSD based
 infrastructure as a service
 
